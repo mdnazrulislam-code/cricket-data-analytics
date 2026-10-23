@@ -1,0 +1,11 @@
+name: Databricks history
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    name: Already loaded
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "History is already in cricsocc.bronze. The daily workflow inserts new finished matches."

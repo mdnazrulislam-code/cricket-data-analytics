@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: cricket-archive
+    environment:
+      POSTGRES_USER: cricket
+      POSTGRES_PASSWORD: cricket_archive
+      POSTGRES_DB: cricket
+    ports:
+      - "5432:5432"
+    volumes:
+      - cricket_archive_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  cricket_archive_data:
