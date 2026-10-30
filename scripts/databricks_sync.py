@@ -626,6 +626,11 @@ class BronzeStore:
                 )
             ],
         )
+        landed = self.rows(
+            f"SELECT match_id FROM {CATALOG}.matches WHERE match_id = {match_id}"
+        )
+        if not landed:
+            raise RuntimeError(f"{match_id} did not land in {CATALOG}.matches")
 
 
 def recent_finished() -> list[dict]:
@@ -707,6 +712,19 @@ def main() -> None:
             )
         if failed:
             raise SystemExit(f"{failed} match(es) failed")
+        total = store.rows(f"SELECT COUNT(*) FROM {CATALOG}.matches")[0][0]
+        recent = store.rows(
+            f"""
+            SELECT match_id, status_text, collected_at
+            FROM {CATALOG}.matches
+            WHERE collected_at >= current_timestamp() - INTERVAL 2 DAYS
+            ORDER BY collected_at DESC
+            """
+        )
+        print(f"databricks {CATALOG}.matches total {total}", flush=True)
+        print(f"databricks matches collected in last 2 days {len(recent)}", flush=True)
+        for row in recent:
+            print(f"in databricks {row[0]} {row[1]} {row[2]}", flush=True)
     finally:
         store.close()
 
