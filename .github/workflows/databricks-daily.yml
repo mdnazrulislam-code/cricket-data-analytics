@@ -14,7 +14,7 @@ jobs:
   sync:
     name: Store new finished matches
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +27,7 @@ jobs:
 
       - name: Store new finished matches in cricsocc.bronze
         env:
+          PYTHONUNBUFFERED: "1"
           DATABRICKS_SERVER_HOSTNAME: dbc-7c1ae9c0-80c4.cloud.databricks.com
           DATABRICKS_HTTP_PATH: /sql/1.0/warehouses/5f957263edb1a1ef
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
