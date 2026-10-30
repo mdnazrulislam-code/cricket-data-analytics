@@ -32,6 +32,28 @@ Databricks does not enforce the collector primary keys or checks. The grain and 
 
 Not in Databricks: `rejections` and `series_done`. Those were local collector state.
 
+## Columns by table
+
+| Table | Columns |
+|---|---|
+| `teams` | `team_id`, `name`, `short_name` |
+| `players` | `player_id`, `name` |
+| `series` | `series_id`, `name`, `category`, `start_time`, `end_time`, `source_path` |
+| `series_years` | `series_id`, `archive_year` |
+| `venues` | `venue_id`, `cricbuzz_venue_id`, `name`, `city`, `country`, `timezone`, `latitude`, `longitude`, `capacity`, `ends`, `hosts` |
+| `matches` | `match_id`, `series_id`, `venue_id`, `home_team_id`, `away_team_id`, `category`, `format_code`, `status`, `match_desc`, `start_time`, `end_time`, `day_night`, `toss_text`, `toss_winner_team_id`, `toss_decision`, `result_text`, `status_text`, `umpire1`, `umpire2`, `umpire3`, `referee`, `info_time_text`, `commentary_loaded`, `collected_at` |
+| `match_facts` | `match_id`, `label`, `value` |
+| `awards` | `match_id`, `award`, `player_id`, `player_name`, `team_name` |
+| `squads` | `match_id`, `team_id`, `player_id`, `squad_group`, `sort_order`, `is_captain`, `is_keeper` |
+| `innings` | `match_id`, `innings_number`, `batting_team_id`, `bowling_team_id`, `runs`, `wickets`, `overs`, `run_rate`, `time_score` |
+| `extras` | `match_id`, `innings_number`, `total`, `wides`, `no_balls`, `byes`, `leg_byes`, `penalty` |
+| `batting` | `match_id`, `innings_number`, `player_id`, `bat_order`, `runs`, `balls`, `dots`, `fours`, `sixes`, `minutes`, `strike_rate`, `is_out`, `dismissal`, `is_captain`, `is_keeper`, `bowler_id`, `fielder1_id`, `fielder2_id`, `fielder3_id`, `wicket_code` |
+| `bowling` | `match_id`, `innings_number`, `player_id`, `bowl_order`, `overs`, `maidens`, `runs`, `wickets`, `economy`, `no_balls`, `wides`, `dots`, `balls` |
+| `wickets` | `match_id`, `innings_number`, `wicket_number`, `player_id`, `player_name`, `runs`, `overs` |
+| `partnerships` | `match_id`, `innings_number`, `partnership_number`, `batter1_id`, `batter1_name`, `batter1_runs`, `batter1_balls`, `batter2_id`, `batter2_name`, `batter2_runs`, `batter2_balls`, `runs`, `balls` |
+| `powerplays` | `match_id`, `innings_number`, `powerplay_number`, `kind`, `overs_from`, `overs_to`, `runs` |
+| `commentary` | `match_id`, `innings_number`, `sequence_number`, `over_number`, `ball_in_over`, `ball_number`, `event`, `batter_id`, `batter_name`, `bowler_id`, `bowler_name`, `legal_runs`, `total_runs`, `team_score`, `commentary_text` |
+
 ## Relationships
 
 ```
@@ -82,6 +104,8 @@ Timestamps are UTC stored as `TIMESTAMP_NTZ`.
 
 One team. Upserted on `team_id`.
 
+Columns: `team_id`, `name`, `short_name`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `team_id` | BIGINT | no | Cricbuzz team id. |
@@ -92,6 +116,8 @@ One team. Upserted on `team_id`.
 
 One player. Name is replaced only when the new name is longer.
 
+Columns: `player_id`, `name`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `player_id` | BIGINT | no | Cricbuzz player id. |
@@ -100,6 +126,8 @@ One player. Name is replaced only when the new name is longer.
 ## `cricsocc.bronze.series`
 
 One competition. Category `other` does not overwrite a more specific stored category.
+
+Columns: `series_id`, `name`, `category`, `start_time`, `end_time`, `source_path`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -114,6 +142,8 @@ One competition. Category `other` does not overwrite a more specific stored cate
 
 Which archive year page listed the series. One series can appear in more than one year.
 
+Columns: `series_id`, `archive_year`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `series_id` | BIGINT | no | `series.series_id`. |
@@ -122,6 +152,8 @@ Which archive year page listed the series. One series can appear in more than on
 ## `cricsocc.bronze.venues`
 
 One ground. New rows get the next `venue_id`. Match on `cricbuzz_venue_id` first, else name and city.
+
+Columns: `venue_id`, `cricbuzz_venue_id`, `name`, `city`, `country`, `timezone`, `latitude`, `longitude`, `capacity`, `ends`, `hosts`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -140,6 +172,8 @@ One ground. New rows get the next `venue_id`. Match on `cricbuzz_venue_id` first
 ## `cricsocc.bronze.matches`
 
 One finished match. The daily job skips a `match_id` that is already here.
+
+Columns: `match_id`, `series_id`, `venue_id`, `home_team_id`, `away_team_id`, `category`, `format_code`, `status`, `match_desc`, `start_time`, `end_time`, `day_night`, `toss_text`, `toss_winner_team_id`, `toss_decision`, `result_text`, `status_text`, `umpire1`, `umpire2`, `umpire3`, `referee`, `info_time_text`, `commentary_loaded`, `collected_at`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -174,6 +208,8 @@ Every non-empty label on `/cricket-match-facts/{match_id}`. Playing XI, bench, a
 
 Common labels: `Match`, `Series`, `Venue`, `Stadium`, `City`, `Date`, `Time`, `Toss`, `Umpires`, `3rd Umpire`, `Referee`, `Capacity`, `Ends`, `Hosts To`, `Also Hosts`.
 
+Columns: `match_id`, `label`, `value`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -181,6 +217,8 @@ Common labels: `Match`, `Series`, `Venue`, `Stadium`, `City`, `Date`, `Time`, `T
 | `value` | STRING | no | Fact value exactly as shown. Never blank. |
 
 ## `cricsocc.bronze.awards`
+
+Columns: `match_id`, `award`, `player_id`, `player_name`, `team_name`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -194,6 +232,8 @@ Common labels: `Match`, `Series`, `Venue`, `Stadium`, `City`, `Date`, `Time`, `T
 
 Playing XI, bench, and support staff from the match info page. One person appears once per match and team.
 
+Columns: `match_id`, `team_id`, `player_id`, `squad_group`, `sort_order`, `is_captain`, `is_keeper`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -205,6 +245,8 @@ Playing XI, bench, and support staff from the match info page. One person appear
 | `is_keeper` | BOOLEAN | no | True when the name is marked `(wk)` or `(c & wk)`. |
 
 ## `cricsocc.bronze.innings`
+
+Columns: `match_id`, `innings_number`, `batting_team_id`, `bowling_team_id`, `runs`, `wickets`, `overs`, `run_rate`, `time_score`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -222,6 +264,8 @@ Playing XI, bench, and support staff from the match info page. One person appear
 
 One extras row per innings. A zero extras row is written when the card omits extras and batting already equals the innings total.
 
+Columns: `match_id`, `innings_number`, `total`, `wides`, `no_balls`, `byes`, `leg_byes`, `penalty`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -234,6 +278,8 @@ One extras row per innings. A zero extras row is written when the card omits ext
 | `penalty` | INT | no | Penalty runs. |
 
 ## `cricsocc.bronze.batting`
+
+Columns: `match_id`, `innings_number`, `player_id`, `bat_order`, `runs`, `balls`, `dots`, `fours`, `sixes`, `minutes`, `strike_rate`, `is_out`, `dismissal`, `is_captain`, `is_keeper`, `bowler_id`, `fielder1_id`, `fielder2_id`, `fielder3_id`, `wicket_code`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -260,6 +306,8 @@ One extras row per innings. A zero extras row is written when the card omits ext
 
 ## `cricsocc.bronze.bowling`
 
+Columns: `match_id`, `innings_number`, `player_id`, `bowl_order`, `overs`, `maidens`, `runs`, `wickets`, `economy`, `no_balls`, `wides`, `dots`, `balls`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -280,6 +328,8 @@ One extras row per innings. A zero extras row is written when the card omits ext
 
 Fall of wicket. Old cards may omit the tenth wicket.
 
+Columns: `match_id`, `innings_number`, `wicket_number`, `player_id`, `player_name`, `runs`, `overs`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -291,6 +341,8 @@ Fall of wicket. Old cards may omit the tenth wicket.
 | `overs` | STRING | yes | Overs at the fall. |
 
 ## `cricsocc.bronze.partnerships`
+
+Columns: `match_id`, `innings_number`, `partnership_number`, `batter1_id`, `batter1_name`, `batter1_runs`, `batter1_balls`, `batter2_id`, `batter2_name`, `batter2_runs`, `batter2_balls`, `runs`, `balls`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
@@ -310,6 +362,8 @@ Fall of wicket. Old cards may omit the tenth wicket.
 
 ## `cricsocc.bronze.powerplays`
 
+Columns: `match_id`, `innings_number`, `powerplay_number`, `kind`, `overs_from`, `overs_to`, `runs`.
+
 | Column | Type | Null | Description |
 |---|---|---|---|
 | `match_id` | BIGINT | no | `matches.match_id`. |
@@ -323,6 +377,8 @@ Fall of wicket. Old cards may omit the tenth wicket.
 ## `cricsocc.bronze.commentary`
 
 Legal deliveries only. `ball_number` is always greater than 0. Text has Cricbuzz `B0$` / `B1$` tokens stripped.
+
+Columns: `match_id`, `innings_number`, `sequence_number`, `over_number`, `ball_in_over`, `ball_number`, `event`, `batter_id`, `batter_name`, `bowler_id`, `bowler_name`, `legal_runs`, `total_runs`, `team_score`, `commentary_text`.
 
 | Column | Type | Null | Description |
 |---|---|---|---|
