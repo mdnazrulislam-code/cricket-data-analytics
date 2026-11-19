@@ -196,7 +196,20 @@ CONNECT_BASE_SLEEP = float(os.environ.get("DATABRICKS_CONNECT_BASE_SLEEP", "5"))
 STATEMENT_ATTEMPTS = int(os.environ.get("DATABRICKS_STATEMENT_ATTEMPTS", "6"))
 
 
+def _inactive_workspace(error: BaseException) -> bool:
+    text = str(error)
+    lowered = text.lower()
+    return (
+        "deny_new_and_existing_resources" in lowered
+        or "denyreason":"inactive"" in lowered.replace(" ", "")
+        or ('"denyreason":"inactive"' in lowered.replace(" ", ""))
+        or ("resource-gatekeeper" in lowered and "inactive" in lowered)
+    )
+
+
 def _transient(error: BaseException) -> bool:
+    if _inactive_workspace(error):
+        return False
     text = str(error).lower()
     markers = (
         "bad_request",
@@ -281,6 +294,12 @@ class BronzeStore:
             try:
                 wake_sql_warehouse(self.host, self.token, warehouse_id)
             except Exception as error:
+                if _inactive_workspace(error):
+                    raise SystemExit(
+                        "Databricks workspace is INACTIVE (resource-gatekeeper DENY_NEW_AND_EXISTING_RESOURCES). "
+                        "Reactivate the workspace billing/subscription, then re-run this workflow. "
+                        f"Details: {error}"
+                    ) from error
                 # Still try to connect; retries below cover transient wake races.
                 print(f"databricks warehouse wake skipped: {error}", flush=True)
         self.conn = None
@@ -314,6 +333,12 @@ class BronzeStore:
                 return
             except BaseException as error:
                 last_error = error
+                if _inactive_workspace(error):
+                    raise SystemExit(
+                        "Databricks workspace is INACTIVE (resource-gatekeeper DENY_NEW_AND_EXISTING_RESOURCES). "
+                        "Reactivate the workspace billing/subscription, then re-run this workflow. "
+                        f"Details: {error}"
+                    ) from error
                 if attempt >= CONNECT_ATTEMPTS or not _transient(error):
                     raise
                 print(f"databricks connect failed attempt {attempt}/{CONNECT_ATTEMPTS}: {error}", flush=True)
