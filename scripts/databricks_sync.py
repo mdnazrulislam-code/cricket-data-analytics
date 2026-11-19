@@ -197,12 +197,10 @@ STATEMENT_ATTEMPTS = int(os.environ.get("DATABRICKS_STATEMENT_ATTEMPTS", "6"))
 
 
 def _inactive_workspace(error: BaseException) -> bool:
-    text = str(error)
-    lowered = text.lower()
+    lowered = str(error).lower().replace(" ", "")
     return (
         "deny_new_and_existing_resources" in lowered
-        or "denyreason":"inactive"" in lowered.replace(" ", "")
-        or ('"denyreason":"inactive"' in lowered.replace(" ", ""))
+        or '"denyreason":"inactive"' in lowered
         or ("resource-gatekeeper" in lowered and "inactive" in lowered)
     )
 
