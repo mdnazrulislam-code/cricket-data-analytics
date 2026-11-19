@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -190,31 +191,168 @@ def cell(value) -> str:
     return source.lit(value)
 
 
+CONNECT_ATTEMPTS = int(os.environ.get("DATABRICKS_CONNECT_ATTEMPTS", "12"))
+CONNECT_BASE_SLEEP = float(os.environ.get("DATABRICKS_CONNECT_BASE_SLEEP", "5"))
+STATEMENT_ATTEMPTS = int(os.environ.get("DATABRICKS_STATEMENT_ATTEMPTS", "6"))
+
+
+def _transient(error: BaseException) -> bool:
+    text = str(error).lower()
+    markers = (
+        "bad_request",
+        "cannot create the resource",
+        "try again later",
+        "temporarily unavailable",
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection refused",
+        "broken pipe",
+        "service unavailable",
+        "too many requests",
+        "rate limit",
+        "warehouse is stopped",
+        "warehouse is starting",
+        "pending",
+        "throttl",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _sleep(attempt: int, base: float) -> None:
+    delay = min(base * (2 ** (attempt - 1)), 60.0)
+    print(f"databricks retry sleeping {delay:.1f}s before attempt {attempt + 1}", flush=True)
+    time.sleep(delay)
+
+
+def warehouse_id_from_path(http_path: str) -> str | None:
+    marker = "/warehouses/"
+    if marker not in http_path:
+        return None
+    return http_path.split(marker, 1)[1].strip("/").split("/")[0] or None
+
+
+def wake_sql_warehouse(host: str, token: str, warehouse_id: str) -> None:
+    """Start the SQL warehouse if it is stopped/stopping, then wait until running."""
+    import urllib.error
+    import urllib.request
+    import json
+
+    base = f"https://{host}/api/2.0/sql/warehouses/{warehouse_id}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    def call(method: str, url: str) -> dict:
+        request = urllib.request.Request(url, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = response.read().decode("utf-8")
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"warehouse API HTTP {error.code}: {detail[:400]}") from error
+
+    info = call("GET", base)
+    state = str(info.get("state") or "").upper()
+    print(f"databricks warehouse {warehouse_id} state {state or 'unknown'}", flush=True)
+    if state in {"STOPPED", "STOPPING"}:
+        print(f"databricks starting warehouse {warehouse_id}", flush=True)
+        call("POST", f"{base}/start")
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        info = call("GET", base)
+        state = str(info.get("state") or "").upper()
+        if state == "RUNNING":
+            print(f"databricks warehouse {warehouse_id} running", flush=True)
+            return
+        print(f"databricks warehouse {warehouse_id} state {state or 'unknown'}; waiting", flush=True)
+        time.sleep(5)
+    raise RuntimeError(f"warehouse {warehouse_id} did not become RUNNING in time (last state {state})")
+
+
 class BronzeStore:
     def __init__(self):
-        host = os.environ.get("DATABRICKS_SERVER_HOSTNAME", "").strip()
-        path = os.environ.get("DATABRICKS_HTTP_PATH", "").strip()
-        token = os.environ.get("DATABRICKS_TOKEN", "").strip()
-        if not host or not path or not token:
+        self.host = os.environ.get("DATABRICKS_SERVER_HOSTNAME", "").strip()
+        self.path = os.environ.get("DATABRICKS_HTTP_PATH", "").strip()
+        self.token = os.environ.get("DATABRICKS_TOKEN", "").strip()
+        if not self.host or not self.path or not self.token:
             raise SystemExit("Set DATABRICKS_SERVER_HOSTNAME, DATABRICKS_HTTP_PATH, and DATABRICKS_TOKEN")
+        warehouse_id = warehouse_id_from_path(self.path)
+        if warehouse_id:
+            try:
+                wake_sql_warehouse(self.host, self.token, warehouse_id)
+            except Exception as error:
+                # Still try to connect; retries below cover transient wake races.
+                print(f"databricks warehouse wake skipped: {error}", flush=True)
+        self.conn = None
+        self.cur = None
+        self._connect()
+
+    def _connect(self) -> None:
         from databricks import sql
 
-        self.conn = sql.connect(server_hostname=host, http_path=path, access_token=token)
-        self.cur = self.conn.cursor()
+        last_error: BaseException | None = None
+        for attempt in range(1, CONNECT_ATTEMPTS + 1):
+            try:
+                if self.cur is not None:
+                    try:
+                        self.cur.close()
+                    except Exception:
+                        pass
+                if self.conn is not None:
+                    try:
+                        self.conn.close()
+                    except Exception:
+                        pass
+                print(f"databricks connecting attempt {attempt}/{CONNECT_ATTEMPTS}", flush=True)
+                self.conn = sql.connect(
+                    server_hostname=self.host,
+                    http_path=self.path,
+                    access_token=self.token,
+                )
+                self.cur = self.conn.cursor()
+                print("databricks connected", flush=True)
+                return
+            except BaseException as error:
+                last_error = error
+                if attempt >= CONNECT_ATTEMPTS or not _transient(error):
+                    raise
+                print(f"databricks connect failed attempt {attempt}/{CONNECT_ATTEMPTS}: {error}", flush=True)
+                _sleep(attempt, CONNECT_BASE_SLEEP)
+        raise last_error  # pragma: no cover
 
     def close(self) -> None:
-        self.cur.close()
-        self.conn.close()
+        if self.cur is not None:
+            self.cur.close()
+        if self.conn is not None:
+            self.conn.close()
+
+    def _execute(self, statement: str) -> None:
+        last_error: BaseException | None = None
+        for attempt in range(1, STATEMENT_ATTEMPTS + 1):
+            try:
+                self.cur.execute(statement)
+                return
+            except BaseException as error:
+                last_error = error
+                if attempt >= STATEMENT_ATTEMPTS or not _transient(error):
+                    raise
+                print(
+                    f"databricks statement failed attempt {attempt}/{STATEMENT_ATTEMPTS}: {error}",
+                    flush=True,
+                )
+                _sleep(attempt, CONNECT_BASE_SLEEP)
+                self._connect()
+        raise last_error  # pragma: no cover
 
     def run(self, statement: str) -> None:
-        self.cur.execute(statement)
+        self._execute(statement)
         try:
             self.cur.fetchall()
         except Exception:
             return
 
     def rows(self, statement: str) -> list[tuple]:
-        self.cur.execute(statement)
+        self._execute(statement)
         return list(self.cur.fetchall())
 
     def existing_ids(self, match_ids: list[int]) -> set[int]:
